@@ -6,7 +6,6 @@ import { environment } from '../../../environments/environment';
 import {
   AuthResponse,
   CurrentUser,
-  JwtClaims,
   LoginRequest,
   RegisterRequest,
 } from '../models/auth.models';
@@ -79,15 +78,24 @@ export class AuthService {
     this._currentUser.set(null);
   }
 
-  private handleAuthSuccess(res: AuthResponse): void {
-    if (!res?.token) return;
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, res.token);
+  private handleAuthSuccess(res: any): void {
+    const payload = res?.data ?? res;
+    const rawToken: string | undefined =
+      payload?.token ?? payload?.accessToken ?? payload?.jwt;
 
-    const parsed = this.decodeToken(res.token, res.name);
+    if (!rawToken) {
+      console.error('VELoop Auth: Login succeeded (200) but no token field found:', res);
+      return;
+    }
+
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, rawToken);
+
+    const parsed = this.decodeToken(rawToken, payload?.name, payload?.role, payload?.userId);
     if (parsed && parsed.expiresAt > Date.now()) {
       this._currentUser.set(parsed);
       this.scheduleAutoLogout(parsed.expiresAt);
     } else {
+      console.error('VELoop Auth: Failed to decode JWT or token already expired:', parsed);
       this.clearSession();
     }
   }
@@ -104,7 +112,12 @@ export class AuthService {
     return user;
   }
 
-  private decodeToken(token: string, fallbackName?: string): CurrentUser | null {
+  private decodeToken(
+    token: string,
+    fallbackName?: string,
+    fallbackRole?: unknown,
+    fallbackUserId?: number
+  ): CurrentUser | null {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
@@ -117,17 +130,31 @@ export class AuthService {
           .join('')
       );
 
-      const claims: JwtClaims = JSON.parse(jsonPayload);
-      const email = claims.email || claims.sub;
+      const claims: Record<string, any> = JSON.parse(jsonPayload);
+      const subStr = String(claims['sub'] ?? '');
+      const email = claims['email'] || (subStr.includes('@') ? subStr : 'user@veloop.local');
+      const userId = Number(
+        claims['userId'] ?? fallbackUserId ?? (!subStr.includes('@') ? subStr : 0)
+      );
+
+      const rawRole = Array.isArray(claims['role'])
+        ? claims['role'][0]
+        : Array.isArray(claims['roles'])
+        ? claims['roles'][0]
+        : claims['role'] ?? fallbackRole ?? 'USER';
+
+      const normalizedRole =
+        String(rawRole).replace('ROLE_', '').toUpperCase() === 'ADMIN' ? 'ADMIN' : 'USER';
 
       return {
-        userId: claims.userId,
+        userId,
         email,
         name: fallbackName || email.split('@')[0],
-        role: claims.role || 'USER',
-        expiresAt: claims.exp * 1000,
+        role: normalizedRole,
+        expiresAt: claims['exp'] ? Number(claims['exp']) * 1000 : Date.now() + 900_000,
       };
-    } catch {
+    } catch (err) {
+      console.error('VELoop Auth: Error decoding JWT claims', err);
       return null;
     }
   }
