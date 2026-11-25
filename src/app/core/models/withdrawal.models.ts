@@ -12,23 +12,16 @@ export type FraudDecision = 'ALLOW' | 'REVIEW' | 'BLOCK';
 export interface PayoutOption {
   id: number;
   payoutMethodId: number;
-  fiatAmount: number;
-  fiatCurrency: string; // e.g. "INR"
-  vesRequired: number;
-  active: boolean;
+  payoutAmount: number;    // Fiat denomination (e.g. 10, 25, 50... 1000)
+  currency: string;        // Fiat currency (e.g. "INR")
+  currencyAmount: number;  // VES cost required
 }
 
 export interface PayoutMethod {
   id: number;
-  code: 'UPI' | 'AMAZON_GIFT_CARD' | 'GOOGLE_PLAY_GIFT_CARD' | 'PAYPAL' | string;
-  displayName: string;
-  active: boolean;
-  options?: PayoutOption[];
-}
-
-export interface PayoutConfigurationResponse {
-  methods: PayoutMethod[];
-  options?: PayoutOption[]; // Supports both nested options on methods or flat lists
+  code: string;
+  name: string;
+  options: PayoutOption[];
 }
 
 export interface CreateWithdrawalRequest {
@@ -41,7 +34,7 @@ export interface Withdrawal {
   id: number;
   withdrawalId: string;
   userId: number;
-  userEmail?: string; // Populated in admin list
+  userEmail?: string;
   payoutMethodId: number;
   payoutMethodCode?: string;
   payoutMethodName?: string;

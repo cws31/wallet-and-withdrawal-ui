@@ -60,7 +60,7 @@ import { WithdrawalStore } from '../withdrawal.store';
                 (click)="selectMethod(method)"
               >
                 <mat-icon class="tile-icon">{{ getMethodIcon(method.code) }}</mat-icon>
-                <span class="tile-title">{{ method.displayName }}</span>
+                <span class="tile-title">{{ method.name }}</span>
                 <span class="tile-sub">{{ method.code }}</span>
               </button>
             }
@@ -70,7 +70,9 @@ import { WithdrawalStore } from '../withdrawal.store';
         <!-- Step 2: Payout Tier Option -->
         <div class="form-section">
           <label class="section-label">2. Select Redemption Tier</label>
-          @if (filteredOptions().length === 0 && !withdrawalStore.isLoadingConfig()) {
+          @if (!selectedMethodId()) {
+            <p class="muted-hint">Select a payout channel above to view available redemption tiers.</p>
+          } @else if (filteredOptions().length === 0 && !withdrawalStore.isLoadingConfig()) {
             <p class="muted-hint">No active payout tiers available for this channel.</p>
           } @else {
             <div class="tier-grid">
@@ -79,13 +81,13 @@ import { WithdrawalStore } from '../withdrawal.store';
                   type="button"
                   class="tier-tile tabular-nums"
                   [class.selected]="selectedOptionId() === opt.id"
-                  [class.insufficient]="opt.vesRequired > walletStore.availableVes()"
+                  [class.insufficient]="opt.currencyAmount > walletStore.availableVes()"
                   (click)="selectOption(opt)"
                 >
                   <div class="fiat-amount">
-                    {{ opt.fiatCurrency || 'INR' }} {{ opt.fiatAmount | number : '1.0-0' }}
+                    {{ opt.currency }} {{ opt.payoutAmount | number : '1.0-0' }}
                   </div>
-                  <div class="ves-cost">{{ opt.vesRequired | number : '1.2-2' }} VES</div>
+                  <div class="ves-cost">{{ opt.currencyAmount | number : '1.2-2' }} VES</div>
                 </button>
               }
             </div>
@@ -151,9 +153,16 @@ import { WithdrawalStore } from '../withdrawal.store';
         <div class="summary-row tabular-nums">
           <span>Selected Tier Cost</span>
           <span class="debit-text">
-            -{{ selectedOption()?.vesRequired ?? 0 | number : '1.2-2' }} VES
+            -{{ selectedOption()?.currencyAmount ?? 0 | number : '1.2-2' }} VES
           </span>
         </div>
+
+        @if (selectedOption(); as opt) {
+          <div class="summary-row tabular-nums">
+            <span>Payout Value</span>
+            <strong>{{ opt.currency }} {{ opt.payoutAmount | number : '1.2-2' }}</strong>
+          </div>
+        }
 
         <div class="summary-divider"></div>
 
@@ -244,7 +253,7 @@ import { WithdrawalStore } from '../withdrawal.store';
     .tile-sub { font-size: 11px; color: var(--vl-text-secondary); }
     .tier-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
       gap: 10px;
     }
     .tier-tile {
@@ -327,10 +336,8 @@ export class CreateWithdrawalComponent implements OnInit {
   );
 
   readonly filteredOptions = computed(() => {
-    const methodId = this.selectedMethodId();
-    if (!methodId) return this.withdrawalStore.allOptions();
-    const matching = this.withdrawalStore.allOptions().filter((o) => o.payoutMethodId === methodId);
-    return matching.length > 0 ? matching : this.withdrawalStore.allOptions();
+    const method = this.selectedMethod();
+    return method ? method.options : [];
   });
 
   readonly selectedOption = computed(() =>
@@ -339,7 +346,7 @@ export class CreateWithdrawalComponent implements OnInit {
 
   readonly remainingVes = computed(() => {
     const current = this.walletStore.availableVes();
-    const cost = this.selectedOption()?.vesRequired ?? 0;
+    const cost = this.selectedOption()?.currencyAmount ?? 0;
     return current - cost;
   });
 

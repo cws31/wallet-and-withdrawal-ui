@@ -39,19 +39,32 @@ export class WithdrawalStore {
   loadConfiguration(): void {
     this.isLoadingConfig.set(true);
     this.api.getPayoutConfiguration().subscribe({
-      next: (res) => {
-        if (Array.isArray(res)) {
-          const activeMethods = res.filter((m) => m.active);
-          this.payoutMethods.set(activeMethods);
-          const flattened = activeMethods.flatMap((m) => m.options ?? []);
-          this.allOptions.set(flattened.filter((o) => o.active));
-        } else {
-          const activeMethods = (res.methods ?? []).filter((m) => m.active);
-          this.payoutMethods.set(activeMethods);
-          const nested = activeMethods.flatMap((m) => m.options ?? []);
-          const combined = (res.options ?? nested).filter((o) => o.active);
-          this.allOptions.set(combined);
-        }
+      next: (rawRes: any) => {
+        const data = rawRes?.data ?? rawRes;
+        const rawMethods: any[] = Array.isArray(data)
+          ? data
+          : data?.methods ?? data?.payoutMethods ?? [];
+
+        const normalizedMethods: PayoutMethod[] = rawMethods.map((m) => {
+          const methodId = Number(m.id);
+          const options: PayoutOption[] = (m.options ?? []).map((o: any) => ({
+            id: Number(o.id),
+            payoutMethodId: methodId,
+            payoutAmount: Number(o.payoutAmount),
+            currency: o.currency ?? 'INR',
+            currencyAmount: Number(o.currencyAmount),
+          }));
+
+          return {
+            id: methodId,
+            code: m.code,
+            name: m.name,
+            options,
+          };
+        });
+
+        this.payoutMethods.set(normalizedMethods);
+        this.allOptions.set(normalizedMethods.flatMap((m) => m.options));
         this.isLoadingConfig.set(false);
       },
       error: () => {
@@ -69,7 +82,6 @@ export class WithdrawalStore {
         next: (created) => {
           this.isSubmitting.set(false);
           this.idempotency.clear();
-          // Refresh wallet balances immediately (VES is deducted on ALLOW, held on REVIEW)
           this.walletStore.refreshBalances();
 
           if (created.reviewNote) {
@@ -87,7 +99,6 @@ export class WithdrawalStore {
           }
         },
         error: () => {
-          // Keep idempotency key intact so user can retry identical payload safely
           this.isSubmitting.set(false);
         },
       })
@@ -133,7 +144,6 @@ export class WithdrawalStore {
         this.withdrawals.update((list) =>
           list.map((w) => (w.id === updated.id ? updated : w))
         );
-        // Trigger balance refresh since backend runs a CORRECTION reversal transaction
         this.walletStore.refreshBalances();
         this.snackBar.open(
           'Withdrawal cancelled and VES balance restored to your wallet.',
